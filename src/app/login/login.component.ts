@@ -4,6 +4,7 @@ import { FormGroup, FormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { AuthService } from '../services/auth.service';
 import { OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { ToastrService } from 'ngx-toastr';
 
 @Component({
   selector: 'app-login',
@@ -21,6 +22,7 @@ export class LoginComponent implements OnInit {
   authService = inject(AuthService);
   router = inject(Router);
   route = inject(ActivatedRoute);
+  toastr = inject(ToastrService);
 
   @Output() loggedin = new EventEmitter<string>();
   @Output() exportLoggedIn = new EventEmitter<boolean>();
@@ -33,27 +35,43 @@ export class LoginComponent implements OnInit {
   }
 
   ngOnInit(): void {
-
     this.route.queryParams.subscribe(params => {
       const token = params['token'];
-      console.log("esto" +token);
+      const refreshToken = params['refreshToken'];
+      
       if (token) {
-        console.log("Token rebut:", token);
-        this.authService.handleGoogleCallback(token).subscribe(() => {
-          this.isLoading = false; 
-          this.exportLoggedIn.emit(true); 
-        });// Avisa de que l'usuari està
-      }
-      else{
+        console.log("Token recibido:", token);
+        localStorage.setItem('access_token', token);
+        
+        // Guardamos explícitamente el refresh token si existe
+        if (refreshToken) {
+          console.log("Refresh token recibido:", refreshToken);
+          localStorage.setItem('refresh_token', refreshToken);
+        }
+        
+        this.authService.handleGoogleCallback(token).subscribe({
+          next: () => {
+            this.isLoading = false; 
+            this.exportLoggedIn.emit(true);
+            this.toastr.success('Inicio de sesión exitoso', 'Bienvenido');
+          },
+          error: (error) => {
+            console.error('Error en la autenticación con Google:', error);
+            this.isLoading = false;
+            this.toastr.error('Error en la autenticación con Google', 'Error');
+          }
+        });
+      } else {
         this.isLoading = false;
       }
-      
     });
+    
+    // Valores predeterminados para el formulario (solo para desarrollo)
     this.formularioLogin = this.form.group({
-      email: ['joan1234@example.com', [Validators.required, Validators.email]], // Valor predeterminado para el email
-      password: ['12345678', [Validators.required, Validators.minLength(8)]] // Valor predeterminado para la contraseña
+      email: ['joan1234@example.com', [Validators.required, Validators.email]],
+      password: ['12345678', [Validators.required, Validators.minLength(8)]]
     });
-  };
+  }
 
   hasError(controlName: string, errorType: string) {
     return this.formularioLogin.get(controlName)?.hasError(errorType) && this.formularioLogin.get(controlName)?.touched;
@@ -70,15 +88,25 @@ export class LoginComponent implements OnInit {
     this.authService.login(loginData).subscribe({
       next: (response) => {
         console.log('Login exitoso:', response);
-        localStorage.setItem('access_token', response.token);
+        
+        // Verificamos explícitamente que se guarde el refresh token
+        if (response.refreshToken) {
+          console.log('Guardando refresh token:', response.refreshToken);
+          localStorage.setItem('refresh_token', response.refreshToken);
+        } else {
+          console.warn('No se recibió refresh token en la respuesta');
+        }
+        
         this.exportLoggedIn.emit(true);
+        this.toastr.success('Inicio de sesión exitoso', 'Bienvenido');
       },
       error: (error) => {
         console.error('Error en el login:', error);
-        alert('Error en el login, verifica tus credenciales');
+        this.toastr.error('Error en el login, verifica tus credenciales', 'Error');
       }
     });
   }
+  
   loginWithGoogle(): void {
     this.authService.loginWithGoogle();
   }
